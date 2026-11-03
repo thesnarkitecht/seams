@@ -76,7 +76,7 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 .side-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 14px 8px 20px; }
 .side-head h1 { font-size: 20px; margin: 0; letter-spacing: -.01em; }
 .filters { display: flex; gap: 6px; padding: 4px 16px 12px; }
-.filters button { border-radius: 999px; padding: 3px 12px; background: var(--main); border: 1px solid var(--line); font-weight: 500; }
+.filters button { border-radius: 999px; padding: 4px 13px; background: var(--main); border: 1px solid var(--line); font-weight: 500; }
 .filters button.active { background: var(--brand); border-color: var(--brand); color: var(--on-brand); }
 .list { overflow: auto; flex: 1; padding: 0 8px 8px; }
 .group-title { padding: 12px 10px 4px; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
@@ -134,7 +134,7 @@ p.day { justify-content: center; } p.day::before, p.day::after { display: none; 
 .msg.cont .head { display: none; }
 .msg .head b { font-weight: 600; color: var(--text); }
 .msg time { font-family: var(--mono); font-size: 11px; }
-.tag { font-size: 11px; font-weight: 600; border: 1px solid var(--line); border-radius: 999px; padding: 0 7px; color: var(--muted); line-height: 17px; }
+.tag { font-size: 11px; font-weight: 600; border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; color: var(--muted); line-height: 17px; }
 .bubble { background: var(--other); border-radius: 4px 16px 16px 16px; padding: 8px 14px; max-width: min(640px, 100%); overflow-wrap: anywhere; display: inline-block; }
 .msg.cont .bubble { border-radius: 16px; }
 .bubble p { margin: 0; } .bubble p + p { margin-top: 6px; }
@@ -153,7 +153,7 @@ p.day { justify-content: center; } p.day::before, p.day::after { display: none; 
 .msg .actions button { padding: 2px 6px; border-radius: 6px; } .msg .actions button:hover { background: var(--hover); }
 .reactions { display: flex; gap: 4px; margin-top: 4px; flex-wrap: wrap; }
 .msg.mine .reactions { justify-content: flex-end; }
-.reactions button { border: 1px solid var(--line); border-radius: 999px; padding: 0 8px; font-size: 12px; background: var(--main); }
+.reactions button { border: 1px solid var(--line); border-radius: 999px; padding: 2px 9px; font-size: 12px; background: var(--main); }
 .reactions button.me { border-color: var(--brand); background: var(--brand-soft); }
 .preview { display: flex; margin-top: 8px; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--main); text-decoration: none; max-width: 520px; }
 .bubble .preview { color: var(--text); }
@@ -174,7 +174,7 @@ p.day { justify-content: center; } p.day::before, p.day::after { display: none; 
 @keyframes bounce { 0%, 60%, 100% { transform: translateY(0); opacity: .35; } 30% { transform: translateY(-3px); opacity: 1; } }
 
 .quick { display: flex; justify-content: flex-end; gap: 6px; padding: 0 48px 8px; flex-wrap: wrap; }
-.quick button { border: 1px solid var(--line); border-radius: 999px; padding: 3px 14px; font-weight: 600; background: var(--main); }
+.quick button { border: 1px solid var(--line); border-radius: 999px; padding: 4px 14px; font-weight: 600; background: var(--main); }
 .quick button:hover { border-color: var(--brand); color: var(--brand); }
 .composer { position: relative; margin: 0 48px 16px; border: 1px solid var(--line); border-radius: 14px; display: flex; flex-wrap: wrap; align-items: flex-end; padding: 4px 6px 4px 14px; background: var(--main); box-shadow: 0 1px 2px rgba(19, 38, 31, .05); }
 .composer:focus-within { border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-soft); }
