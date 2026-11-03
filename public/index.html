@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Seams</title>
+<link rel="icon" href="/icon.svg">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<!-- login -->
+<div id="auth" class="auth hidden">
+  <form id="authForm" class="auth-card">
+    <div class="brand"><img src="/icon.svg" alt=""> Seams</div>
+    <p class="muted" id="authHint">Sign in to your workspace</p>
+    <label>Username <input name="name" autocomplete="username" required></label>
+    <label class="reg">Display name <input name="display" autocomplete="name"></label>
+    <label>Password <input name="password" type="password" autocomplete="current-password" required minlength="6"></label>
+    <p class="error" id="authErr" role="alert"></p>
+    <button class="primary" type="submit" id="authBtn">Sign in</button>
+    <button class="link" type="button" id="authToggle">Create an account</button>
+  </form>
+</div>
+
+<!-- app -->
+<div id="app" class="app hidden">
+  <header class="topbar">
+    <div class="brand small"><img src="/icon.svg" alt=""> Seams</div>
+    <form id="searchForm" class="search" role="search">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>
+      <input id="searchInput" placeholder="Search messages" aria-label="Search messages">
+    </form>
+    <button id="meBtn" class="avatar-btn" aria-label="Account"></button>
+    <div id="meMenu" class="menu hidden">
+      <div class="menu-head" id="meName"></div>
+      <button id="logoutBtn">Sign out</button>
+    </div>
+  </header>
+
+  <nav class="rail" aria-label="Apps">
+    <button data-view="activity" title="Activity"><svg viewBox="0 0 24 24"><path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4zM10 20a2 2 0 0 0 4 0"/></svg><span>Activity</span><i class="badge hidden" id="activityBadge"></i></button>
+    <button data-view="chat" class="active" title="Chat"><svg viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z"/></svg><span>Chat</span></button>
+    <button data-view="teams" title="Teams"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><circle cx="17" cy="9" r="2.5"/><path d="M3 19c0-3 3-5 6-5s6 2 6 5M15 14c3 0 6 1.5 6 4.5"/></svg><span>Teams</span></button>
+    <button data-view="agents" title="Agents"><svg viewBox="0 0 24 24"><rect x="5" y="8" width="14" height="11" rx="3"/><path d="M12 4v4M9 13h.01M15 13h.01M9 16h6"/></svg><span>Agents</span></button>
+  </nav>
+
+  <aside class="side">
+    <section data-pane="chat">
+      <div class="side-head"><h1>Chat</h1><button class="icon" id="newChatBtn" title="New chat" aria-label="New chat"><svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16zM14 6l4 4"/></svg></button></div>
+      <div class="filters" role="tablist">
+        <button data-filter="unread">Unread</button><button data-filter="channel">Channels</button><button data-filter="chat">Chats</button>
+      </div>
+      <div id="convoList" class="list"></div>
+    </section>
+    <section data-pane="activity" class="hidden">
+      <div class="side-head"><h1>Activity</h1></div>
+      <div id="activityList" class="list"></div>
+    </section>
+    <section data-pane="teams" class="hidden">
+      <div class="side-head"><h1>Teams</h1><button class="icon" id="newChannelBtn" title="New channel" aria-label="New channel">+</button></div>
+      <div id="teamList" class="list"></div>
+    </section>
+    <section data-pane="agents" class="hidden">
+      <div class="side-head"><h1>Agents</h1><button class="icon" id="newAgentBtn" title="New agent" aria-label="New agent">+</button></div>
+      <div id="agentList" class="list"></div>
+    </section>
+  </aside>
+
+  <main class="main" id="main">
+    <div class="empty" id="emptyState"><img src="/icon.svg" alt=""><h2>Welcome to Seams</h2><p>Pick a chat, start a new one, or create an agent.</p></div>
+    <div id="convoView" class="hidden convo">
+      <div class="convo-head">
+        <div id="convoAvatar"></div>
+        <h2 id="convoTitle"></h2>
+        <div class="tabs" role="tablist">
+          <button data-tab="chat" class="active">Chat</button><button data-tab="shared">Shared</button><button data-tab="notes">Notes</button><button data-tab="recap">Recap</button>
+        </div>
+        <div class="spacer"></div>
+        <button class="icon" id="videoBtn" title="Video call" aria-label="Video call"><svg viewBox="0 0 24 24"><rect x="3" y="6" width="13" height="12" rx="2"/><path d="m16 10 5-3v10l-5-3"/></svg></button>
+        <button class="icon" id="audioBtn" title="Audio call" aria-label="Audio call"><svg viewBox="0 0 24 24"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"/></svg></button>
+        <button class="icon" id="addPeopleBtn" title="Add people" aria-label="Add people"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2 20c0-4 3-6 7-6s7 2 7 6M19 8v6M16 11h6"/></svg></button>
+        <button class="icon" id="favBtn" title="Favorite" aria-label="Favorite"><svg viewBox="0 0 24 24"><path d="m12 3 2.8 5.8 6.2.9-4.5 4.4 1 6.2L12 17.4 6.5 20.3l1-6.2L3 9.7l6.2-.9z"/></svg></button>
+        <button class="icon" id="leaveBtn" title="Leave" aria-label="Leave conversation"><svg viewBox="0 0 24 24"><path d="M14 4h5v16h-5M10 8l-4 4 4 4M6 12h10"/></svg></button>
+      </div>
+      <div id="callBanner" class="call-banner hidden"><span id="callBannerText"></span><button class="primary" id="joinCallBtn">Join</button></div>
+      <div class="tab" data-tabpane="chat">
+        <div id="messages" class="messages" aria-live="polite"></div>
+        <div class="typing" id="typing"></div>
+        <div class="quick" id="quick"></div>
+        <form id="composer" class="composer">
+          <div id="attachPreview" class="attach-preview hidden"></div>
+          <textarea id="input" rows="1" placeholder="Type a message" aria-label="Type a message"></textarea>
+          <div class="composer-tools">
+            <button type="button" class="icon" id="emojiBtn" aria-label="Emoji">☺</button>
+            <label class="icon" aria-label="Attach file" title="Attach file"><svg viewBox="0 0 24 24"><path d="m20 11-8 8a5 5 0 0 1-7-7l9-9a3.5 3.5 0 0 1 5 5l-9 9a2 2 0 0 1-3-3l8-8"/></svg><input type="file" id="fileInput" hidden></label>
+            <button type="submit" class="icon send" aria-label="Send"><svg viewBox="0 0 24 24"><path d="M4 4 21 12 4 20l3-8zM7 12h14"/></svg></button>
+          </div>
+          <div id="emojiPicker" class="emoji-picker hidden"></div>
+        </form>
+      </div>
+      <div class="tab hidden" data-tabpane="shared"><div id="sharedList" class="pad"></div></div>
+      <div class="tab hidden" data-tabpane="notes"><div class="pad notes"><textarea id="notes" placeholder="Shared notes for everyone in this conversation…" aria-label="Notes"></textarea><small class="muted" id="notesStatus"></small></div></div>
+      <div class="tab hidden" data-tabpane="recap"><div id="recap" class="pad"></div></div>
+    </div>
+    <div id="panel" class="hidden pad panel"></div>
+  </main>
+</div>
+
+<!-- call -->
+<div id="call" class="call hidden">
+  <div id="videos" class="videos"></div>
+  <div class="call-bar">
+    <span id="callTitle"></span>
+    <button id="micBtn" class="round" aria-label="Mute">🎙</button>
+    <button id="camBtn" class="round" aria-label="Camera">📷</button>
+    <button id="screenBtn" class="round" aria-label="Share screen">🖥</button>
+    <button id="hangBtn" class="round danger" aria-label="Leave call">✕</button>
+  </div>
+</div>
+
+<dialog id="dialog"><form method="dialog" id="dialogForm"></form></dialog>
+<div id="toast" class="toast hidden" role="status"></div>
+<script type="module" src="/app.js"></script>
+</body>
+</html>

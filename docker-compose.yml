@@ -1,0 +1,11 @@
+services:
+  seams:
+    build: .
+    ports: ["3000:3000"]
+    volumes: ["./data:/data"]
+    environment:
+      # Optional: enables built-in Claude agents
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      # Set to "false" after your team has signed up to close registration
+      SEAMS_OPEN_SIGNUP: ${SEAMS_OPEN_SIGNUP:-true}
+    restart: unless-stopped
