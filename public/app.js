@@ -37,16 +37,17 @@ function identicon(seed) {
   identicons.set(seed, svg);
   return svg;
 }
+const face = (u) => u?.avatar ? `<img class="idn" src="${esc(u.avatar)}" alt="" loading="lazy">` : identicon(u?.name || u?.display || '?');
 function avatar(u, size = '') {
   if (!u) return '';
-  return `<span class="av ${size === true ? 'lg' : size} ${u.is_agent ? 'bot' : ''}" aria-hidden="true">${identicon(u.name || u.display)}<i class="dot ${u.online || u.is_agent ? 'on' : ''}" data-presence="${u.id}"></i></span>`;
+  return `<span class="av ${size === true ? 'lg' : size} ${u.is_agent ? 'bot' : ''}" aria-hidden="true">${face(S.users.get(u.id) || u)}<i class="dot ${u.online || u.is_agent ? 'on' : ''}" data-presence="${u.id}"></i></span>`;
 }
 const chanAvatar = (c) => `<span class="av chan" aria-hidden="true">#</span>`;
 function convoAvatar(c) {
   if (c.kind === 'channel') return chanAvatar(c);
   const others = c.members.filter((m) => m.id !== S.me.id);
   if (others.length <= 1) return avatar(S.users.get(others[0]?.id) || others[0] || S.me);
-  return `<span class="av stack" aria-hidden="true">${identicon(others[0].name)}${identicon(others[1].name)}</span>`;
+  return `<span class="av stack" aria-hidden="true">${face(S.users.get(others[0].id) || others[0])}${face(S.users.get(others[1].id) || others[1])}</span>`;
 }
 function convoName(c) {
   if (c.kind === 'channel') return `${c.team} › ${c.name}`;
@@ -93,9 +94,17 @@ function logout() {
   localStorage.removeItem('seams_token'); location.reload();
 }
 $('#logoutBtn').onclick = logout;
-$('#meBtn').onclick = (e) => { e.stopPropagation(); $('#meMenu').classList.toggle('hidden'); };
+$('#meMenu').onclick = (e) => e.stopPropagation(); // keep open while picking a file
+$('#photoInput').onchange = async (e) => {
+  const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+  if (f.size > 2e6) return toast('Pick a photo under 2 MB.');
+  try { await api('/api/me/avatar', { method: 'POST', body: f, headers: { 'content-type': f.type } }); $('#meMenu').classList.add('hidden'); toast('Photo updated.'); }
+  catch (err) { toast(esc(err.message)); }
+};
+$('#removePhotoBtn').onclick = async () => { await api('/api/me/avatar', { method: 'DELETE' }); $('#meMenu').classList.add('hidden'); toast('Photo removed. Your identicon is back.'); };
+$('#meBtn').onclick = (e) => { e.stopPropagation(); $('#removePhotoBtn').hidden = !S.me.avatar; $('#meMenu').classList.toggle('hidden'); };
 document.addEventListener('click', (e) => {
-  $('#meMenu').classList.add('hidden');
+  $('#meMenu').classList.add('hidden'); $('#moreMenu').classList.add('hidden');
   if (!e.target.closest('#emojiPicker, #emojiBtn')) $('#emojiPicker').classList.add('hidden');
 });
 
@@ -141,7 +150,11 @@ function onEvent(ev) {
     }
     case 'message_delete': S.messages = S.messages.filter((x) => x.id !== ev.id); if (S.current === ev.convo_id) renderMessages(); break;
     case 'convo': S.convos.set(ev.convo.id, ev.convo); renderList(); if (S.current === ev.convo.id) renderHead(); break;
-    case 'user': S.users.set(ev.user.id, ev.user); break;
+    case 'user':
+      S.users.set(ev.user.id, ev.user);
+      if (ev.user.id === S.me.id) { S.me = ev.user; $('#meBtn').innerHTML = avatar(S.me); }
+      renderList(); if (S.current) { renderHead(); renderMessages(); }
+      break;
     case 'presence': {
       const u = S.users.get(ev.user_id); if (u) u.online = ev.online;
       $$(`[data-presence="${ev.user_id}"]`).forEach((d) => d.classList.toggle('on', ev.online)); break;
@@ -149,7 +162,8 @@ function onEvent(ev) {
     case 'typing': {
       if (ev.user.id === S.me.id) return;
       (typingTimers[ev.convo_id] ??= {})[ev.user.id] = { name: ev.user.display, t: Date.now() };
-      renderTyping(); setTimeout(renderTyping, ev.user.is_agent ? 60000 : 4000); break;
+      renderTyping(); renderList();
+      setTimeout(() => { renderTyping(); renderList(); }, (ev.user.is_agent ? 60000 : 4000) + 50); break;
     }
     case 'notes': if (S.current === ev.convo_id && ev.by !== S.me.id) $('#notes').value = ev.notes; break;
     case 'calls': S.calls = ev.calls; renderCallBanner(); break;
@@ -178,6 +192,7 @@ function onEvent(ev) {
   }
 }
 function clearTyping(cid, uid) { if (typingTimers[cid]) delete typingTimers[cid][uid]; renderTyping(); }
+const typingIn = (cid) => Object.entries(typingTimers[cid] || {}).filter(([uid, v]) => Date.now() - v.t < (S.users.get(+uid)?.is_agent ? 60000 : 4000)).map(([, v]) => v.name);
 function renderTyping() {
   const now = Date.now();
   const who = Object.entries(typingTimers[S.current] || {})
@@ -195,25 +210,24 @@ function renderTyping() {
 function notify(c, m) {
   if (document.visibilityState === 'visible' && S.current === c.id) return;
   if (window.Notification?.permission === 'granted' && document.visibilityState !== 'visible') new Notification(m.display, { body: m.body.slice(0, 140), tag: 'seams' + c.id });
-  updateActivityBadge();
+  updateTitle();
 }
 
 // ---------- side lists ----------
 function renderList() {
-  updateActivityBadge();
+  updateTitle();
   const all = [...S.convos.values()];
   const pass = (c) => S.filter === 'unread' ? c.unread > 0 : S.filter === 'channel' ? c.kind === 'channel' : S.filter === 'chat' ? c.kind !== 'channel' : true;
   const item = (c) => `<button class="item ${c.id === S.current ? 'active' : ''} ${c.unread ? 'unread' : ''}" data-convo="${c.id}">${convoAvatar(c)}
-    <span class="meta"><div class="name">${esc(convoName(c))}</div><div class="sub">${c.last ? esc((c.last.user_id === S.me.id ? 'You: ' : '') + (c.last.body.replace(/[*`]/g, '') || '📎 ' + (c.last.file?.name || 'file'))) : '&nbsp;'}</div></span>
+    <span class="meta"><div class="name">${esc(convoName(c))}</div>${typingIn(c.id).length ? `<div class="sub typing-now">${esc(typingIn(c.id).join(', '))} ${typingIn(c.id).length > 1 ? 'are' : 'is'} typing…</div>` : ''}<div class="sub${typingIn(c.id).length ? ' hidden' : ''}">${c.last ? esc((c.last.user_id === S.me.id ? 'You: ' : '') + (c.last.body.replace(/[*`]/g, '') || '📎 ' + (c.last.file?.name || 'file'))) : '&nbsp;'}</div></span>
     ${c.unread ? `<span class="count">${c.unread}</span>` : ''}</button>`;
   const sect = (title, list) => list.length ? `<div class="group-title">⌄ ${title}</div>${list.map(item).join('')}` : '';
   const shown = all.filter(pass);
   $('#convoList').innerHTML = sect('Favorites', shown.filter((c) => c.fav)) + sect('Chats', shown.filter((c) => !c.fav && c.kind !== 'channel')) + sect('Teams and channels', shown.filter((c) => !c.fav && c.kind === 'channel'))
     || '<p class="muted pad">Nothing here yet. Start a chat with the ✎ button.</p>';
 }
-function updateActivityBadge() {
+function updateTitle() {
   const n = [...S.convos.values()].reduce((a, c) => a + c.unread, 0);
-  $('#activityBadge').textContent = n; $('#activityBadge').classList.toggle('hidden', !n);
   document.title = n ? `(${n}) Seams` : 'Seams';
 }
 document.addEventListener('click', (e) => {
@@ -229,13 +243,8 @@ function setView(v) {
   $$('.rail button').forEach((x) => x.classList.toggle('active', x.dataset.view === v));
   $$('.side section').forEach((s) => s.classList.toggle('hidden', s.dataset.pane !== v));
   $('#app').classList.remove('open-main');
-  if (v === 'activity') renderActivity();
   if (v === 'teams') renderTeams();
   if (v === 'agents') renderAgents();
-}
-function renderActivity() {
-  const unread = [...S.convos.values()].filter((c) => c.unread);
-  $('#activityList').innerHTML = unread.length ? unread.map((c) => `<button class="item unread" data-convo="${c.id}">${convoAvatar(c)}<span class="meta"><div class="name">${esc(c.last?.display || '')} in ${esc(convoName(c))}</div><div class="sub">${esc(c.last?.body || '')}</div></span><span class="count">${c.unread}</span></button>`).join('') : '<p class="muted pad">You’re all caught up.</p>';
 }
 async function renderTeams() {
   const { channels } = await api('/api/channels');
@@ -271,7 +280,7 @@ function renderHead() {
   $('#convoAvatar').innerHTML = `<button class="icon mobile-back" id="backBtn" aria-label="Back">‹</button>` + convoAvatar(c);
   $('#backBtn').onclick = () => $('#app').classList.remove('open-main');
   $('#convoTitle').textContent = convoName(c);
-  $('#favBtn').classList.toggle('on', c.fav);
+  $('#favBtn').textContent = c.fav ? 'Remove from favorites' : 'Add to favorites';
 }
 $$('.tabs button').forEach((b) => b.onclick = () => setTab(b.dataset.tab));
 function setTab(t) {
@@ -357,6 +366,7 @@ $('#emojiBtn').onclick = () => $('#emojiPicker').classList.toggle('hidden');
 $('#emojiPicker').onclick = (e) => { if (e.target.tagName === 'BUTTON') { input.value += e.target.textContent; input.focus(); } };
 
 // header actions
+$('#moreBtn').onclick = (e) => { e.stopPropagation(); $('#moreMenu').classList.toggle('hidden'); };
 $('#favBtn').onclick = async () => { const c = S.convos.get(S.current); c.fav = !c.fav; await api(`/api/convos/${c.id}/fav`, { method: 'POST', body: { fav: c.fav } }); renderHead(); renderList(); };
 $('#leaveBtn').onclick = async () => {
   if (!confirm('Leave this conversation?')) return;
@@ -564,7 +574,6 @@ function stopRing() { if (!ring) return; ring.stop(); clearTimeout(ring.timer); 
 $('#videoBtn').onclick = () => startCall(S.current, true);
 $('#audioBtn').onclick = () => startCall(S.current, false);
 $('#joinCallBtn').onclick = () => startCall(S.current, true);
-$('#joinAudioBtn').onclick = () => startCall(S.current, false);
 
 async function startCall(cid, video) {
   if (call) return toast('You are already in a call.');

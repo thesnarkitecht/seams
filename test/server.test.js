@@ -68,6 +68,17 @@ test('chat, agents and access control', async () => {
   assert.equal((await call('GET', `/api/convos/${dm}/messages`, agent.token)).status, 403);
   assert.equal((await call('POST', '/api/agents', agent.token, { name: 'x2', kind: 'api' })).status, 403);
 
+  // profile photo: identicon until uploaded, served publicly, removable (GitHub behavior)
+  const png = Buffer.from('89504e470d0a1a0a', 'hex');
+  const up = await fetch(base + '/api/me/avatar', { method: 'POST', headers: { authorization: 'Bearer ' + bob, 'content-type': 'image/png' }, body: png });
+  const photo = (await up.json()).user.avatar;
+  assert.match(photo, /^\/avatars\/\d+\?v=/);
+  const img = await fetch(base + photo);
+  assert.equal(img.headers.get('content-type'), 'image/png');
+  assert.deepEqual(Buffer.from(await img.arrayBuffer()), png);
+  assert.equal((await fetch(base + '/api/me/avatar', { method: 'POST', headers: { authorization: 'Bearer ' + bob, 'content-type': 'text/html' }, body: '<script>' })).status, 400);
+  assert.equal((await call('DELETE', '/api/me/avatar', bob)).data.user.avatar, null);
+
   // channel: agent only answers when @mentioned
   const { id: ch } = (await call('POST', '/api/convos', alice, { kind: 'channel', name: 'dev', members: [agent.id] })).data;
   await call('POST', `/api/convos/${ch}/messages`, alice, { body: 'no mention' });

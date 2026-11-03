@@ -5,9 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Seams</title>
 <link rel="icon" href="/icon.svg">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
 <link rel="stylesheet" href="/style.css">
 </head>
 <body>
@@ -36,12 +33,13 @@
     <button id="meBtn" class="avatar-btn" aria-label="Account"></button>
     <div id="meMenu" class="menu hidden">
       <div class="menu-head" id="meName"></div>
+      <label class="menu-item">Upload a photo…<input type="file" id="photoInput" accept="image/png,image/jpeg,image/gif,image/webp" hidden></label>
+      <button id="removePhotoBtn">Remove photo</button>
       <button id="logoutBtn">Sign out</button>
     </div>
   </header>
 
   <nav class="rail" aria-label="Apps">
-    <button data-view="activity" title="Activity"><svg viewBox="0 0 24 24"><path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4zM10 20a2 2 0 0 0 4 0"/></svg><span>Activity</span><i class="badge hidden" id="activityBadge"></i></button>
     <button data-view="chat" class="active" title="Chat"><svg viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z"/></svg><span>Chat</span></button>
     <button data-view="teams" title="Teams"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><circle cx="17" cy="9" r="2.5"/><path d="M3 19c0-3 3-5 6-5s6 2 6 5M15 14c3 0 6 1.5 6 4.5"/></svg><span>Teams</span></button>
     <button data-view="agents" title="Agents"><svg viewBox="0 0 24 24"><rect x="5" y="8" width="14" height="11" rx="3"/><path d="M12 4v4M9 13h.01M15 13h.01M9 16h6"/></svg><span>Agents</span></button>
@@ -54,10 +52,6 @@
         <button data-filter="unread">Unread</button><button data-filter="channel">Channels</button><button data-filter="chat">Chats</button>
       </div>
       <div id="convoList" class="list"></div>
-    </section>
-    <section data-pane="activity" class="hidden">
-      <div class="side-head"><h1>Activity</h1></div>
-      <div id="activityList" class="list"></div>
     </section>
     <section data-pane="teams" class="hidden">
       <div class="side-head"><h1>Teams</h1><button class="icon" id="newChannelBtn" title="New channel" aria-label="New channel">+</button></div>
@@ -82,10 +76,10 @@
         <button class="icon" id="videoBtn" title="Video call" aria-label="Video call"><svg viewBox="0 0 24 24"><rect x="3" y="6" width="13" height="12" rx="2"/><path d="m16 10 5-3v10l-5-3"/></svg></button>
         <button class="icon" id="audioBtn" title="Audio call" aria-label="Audio call"><svg viewBox="0 0 24 24"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"/></svg></button>
         <button class="icon" id="addPeopleBtn" title="Add people" aria-label="Add people"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2 20c0-4 3-6 7-6s7 2 7 6M19 8v6M16 11h6"/></svg></button>
-        <button class="icon" id="favBtn" title="Favorite" aria-label="Favorite"><svg viewBox="0 0 24 24"><path d="m12 3 2.8 5.8 6.2.9-4.5 4.4 1 6.2L12 17.4 6.5 20.3l1-6.2L3 9.7l6.2-.9z"/></svg></button>
-        <button class="icon" id="leaveBtn" title="Leave" aria-label="Leave conversation"><svg viewBox="0 0 24 24"><path d="M14 4h5v16h-5M10 8l-4 4 4 4M6 12h10"/></svg></button>
+        <button class="icon" id="moreBtn" title="More" aria-label="More options" aria-haspopup="menu">⋯</button>
+        <div id="moreMenu" class="menu more hidden" role="menu"><button id="favBtn" role="menuitem">Add to favorites</button><button id="leaveBtn" role="menuitem">Leave conversation</button></div>
       </div>
-      <div id="callBanner" class="call-banner hidden"><span class="live-dot" aria-hidden="true"></span><span id="callBannerText"></span><span class="spacer"></span><button class="ghost" id="joinAudioBtn">Join with audio</button><button class="primary" id="joinCallBtn">Join with video</button></div>
+      <div id="callBanner" class="call-banner hidden"><span id="callBannerText"></span><button class="primary" id="joinCallBtn">Join</button></div>
       <div class="tab" data-tabpane="chat">
         <div id="messages" class="messages" aria-live="polite"></div>
         <div class="typing" id="typing"></div>

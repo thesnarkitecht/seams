@@ -29,6 +29,8 @@ CREATE TABLE IF NOT EXISTS messages(id INTEGER PRIMARY KEY, convo_id INTEGER NOT
   body TEXT NOT NULL, file TEXT, preview TEXT, reactions TEXT DEFAULT '{}', ts INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS msg_convo ON messages(convo_id, id);
 `);
+// added after the first release: uploaded profile photo, stored as "<fileId>:<mime>"
+try { db.exec('ALTER TABLE users ADD COLUMN avatar TEXT'); } catch {}
 
 const q = (sql) => db.prepare(sql);
 const hash = (p, salt = crypto.randomBytes(16).toString('hex')) =>
@@ -38,7 +40,9 @@ const checkPass = (p, stored) => {
   const a = Buffer.from(hash(p, salt).split(':')[1], 'hex'), b = Buffer.from(h, 'hex');
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 };
-const pubUser = (u) => u && { id: u.id, name: u.name, display: u.display, is_agent: !!u.is_agent, is_admin: !!u.is_admin, online: online.has(u.id) };
+const pubUser = (u) => u && { id: u.id, name: u.name, display: u.display, is_agent: !!u.is_agent, is_admin: !!u.is_admin, online: online.has(u.id),
+  avatar: u.avatar ? `/avatars/${u.id}?v=${u.avatar.split(':')[0].slice(0, 8)}` : null };
+const AVATAR_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
 
 // ---------- realtime ----------
 const sockets = new Map(); // userId -> Set<ws>
@@ -254,6 +258,22 @@ const routes = {
     return { messages: rows.map((r) => getMessage(r.id)) };
   },
   // files: raw body upload, ?name=
+  // GitHub-style: everyone has an identicon until they upload a photo
+  'POST /api/me/avatar': async (req, u) => {
+    const type = req.headers['content-type'];
+    if (!AVATAR_TYPES.includes(type)) throw httpErr(400, 'photo must be PNG, JPEG, GIF or WebP');
+    const buf = await readBody(req, 2e6);
+    const id = crypto.randomBytes(12).toString('hex');
+    fs.writeFileSync(path.join(DATA, 'files', id), buf);
+    q('UPDATE users SET avatar=? WHERE id=?').run(`${id}:${type}`, u.id);
+    const user = pubUser(q('SELECT * FROM users WHERE id=?').get(u.id));
+    broadcast({ type: 'user', user }); return { user };
+  },
+  'DELETE /api/me/avatar': async (req, u) => {
+    q('UPDATE users SET avatar=NULL WHERE id=?').run(u.id);
+    const user = pubUser(q('SELECT * FROM users WHERE id=?').get(u.id));
+    broadcast({ type: 'user', user }); return { user };
+  },
   'POST /api/files': async (req, u) => {
     const buf = await readBody(req, 50e6);
     const name = path.basename(new URL(req.url, 'http://x').searchParams.get('name') || 'file').slice(0, 120);
@@ -312,8 +332,15 @@ const server = http.createServer(async (req, res) => {
       if (!PUBLIC_ROUTES.has(handler[0]) && !user) throw httpErr(401, 'login required');
       // agent tokens may only post/read messages, not manage the server
       if (user?.is_agent && !/messages|convos$|^GET \/api\/(me|users)/.test(handler[0])) throw httpErr(403, 'agent tokens cannot do that');
-      const body = req.method === 'POST' && handler[0] === 'POST /api/files' ? {} : JSON.parse((await readBody(req)).toString() || '{}');
+      const body = /^POST \/api\/(files|me\/avatar)$/.test(handler[0]) ? {} : JSON.parse((await readBody(req)).toString() || '{}');
       return json(res, 200, await handler[1](req, user, body, params));
+    }
+    const av = url.pathname.match(/^\/avatars\/(\d+)$/);
+    if (av) { // public like GitHub avatars, so <img> works without a token
+      const [id, type] = (q('SELECT avatar FROM users WHERE id=?').get(Number(av[1]))?.avatar || '').split(':');
+      if (!id) throw httpErr(404, 'no photo');
+      res.writeHead(200, { 'content-type': type, 'cache-control': 'public, max-age=31536000, immutable', 'x-content-type-options': 'nosniff', 'content-security-policy': "default-src 'none'" });
+      return fs.createReadStream(path.join(DATA, 'files', id)).pipe(res);
     }
     if (url.pathname.startsWith('/files/')) {
       if (!authUser(req)) throw httpErr(401, 'login required');

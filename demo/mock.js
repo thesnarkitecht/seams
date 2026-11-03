@@ -76,9 +76,10 @@
         if (c.kind === 'channel' && !m.body.toLowerCase().includes('@' + u.name)) continue;
         setTimeout(() => emit({ type: 'typing', convo_id: c.id, user: u }), 300);
         setTimeout(() => post(c.id, uid, agentReply(c, m)), 1600);
-      } else if (c.kind !== 'channel' && CANNED[uid] && u.online !== undefined && c.members.length <= 4 && Math.random() < 0.7) {
-        setTimeout(() => emit({ type: 'typing', convo_id: c.id, user: u }), 900);
-        setTimeout(() => post(c.id, uid, CANNED[uid][Math.floor(Math.random() * CANNED[uid].length)]), 2600);
+      } else if (c.kind !== 'channel' && CANNED[uid] && c.members.length <= 4) {
+        setTimeout(() => emit({ type: 'typing', convo_id: c.id, user: u }), 700);
+        setTimeout(() => emit({ type: 'typing', convo_id: c.id, user: u }), 2700);
+        setTimeout(() => post(c.id, uid, CANNED[uid][Math.floor(Math.random() * CANNED[uid].length)]), 4200);
         break;
       }
     }
@@ -87,6 +88,11 @@
   const routes = [
     ['GET', /^\/api\/me$/, () => ({ user: find(me), signup: true })],
     ['GET', /^\/api\/config$/, () => ({ iceServers: [] })],
+    ['POST', /^\/api\/me\/avatar$/, (b, _, url, raw) => {
+      if (!/^image\/(png|jpeg|gif|webp)$/.test(raw?.type)) err(400, 'photo must be PNG, JPEG, GIF or WebP');
+      find(me).avatar = URL.createObjectURL(raw); emit({ type: 'user', user: find(me) }); return { user: find(me) };
+    }],
+    ['DELETE', /^\/api\/me\/avatar$/, () => { find(me).avatar = null; emit({ type: 'user', user: find(me) }); return { user: find(me) }; }],
     ['POST', /^\/api\/(login|register|logout)$/, () => ({ token: 'demo' })],
     ['GET', /^\/api\/users$/, () => ({ users })],
     ['GET', /^\/api\/convos$/, () => ({ convos: convos.filter((c) => c.members.includes(me)).map(view).sort((a, b) => (b.last?.ts || 0) - (a.last?.ts || 0)) })],
@@ -140,13 +146,18 @@
       if (!hit) continue;
       try {
         const body = typeof opts.body === 'string' ? JSON.parse(opts.body || '{}') : {};
-        return new Response(JSON.stringify(await fn(body, Number(hit[1]), url)), { status: 200 });
+        return new Response(JSON.stringify(await fn(body, Number(hit[1]), url, opts.body)), { status: 200 });
       } catch (e) { return new Response(JSON.stringify({ error: e.message }), { status: e.status || 500 }); }
     }
     return new Response(JSON.stringify({ error: 'not available in the demo' }), { status: 404 });
   };
   window.WebSocket = class { constructor() { this.readyState = 1; window.__seamsWs = this; } send() {} close() {} };
   window.__seamsDemo = true;
+  // show typing right away: Ben starts typing in your DM, Corey in his
+  const script = [[1500, () => emit({ type: 'typing', convo_id: 1, user: find(2) })], [2200, () => emit({ type: 'typing', convo_id: 3, user: find(3) })],
+    [3500, () => emit({ type: 'typing', convo_id: 1, user: find(2) })], [5000, () => post(1, 2, 'Typing indicators work now too 👀')],
+    [5200, () => emit({ type: 'typing', convo_id: 3, user: find(3) })], [6500, () => post(3, 3, 'Never mind, Ben added me. Thanks!')]];
+  addEventListener('load', () => script.forEach(([ms, fn]) => setTimeout(fn, ms)));
   window.safeStore = { getItem: () => 'demo', setItem() {}, removeItem() {} };
   window.demoConfirm = () => true;
 })();
