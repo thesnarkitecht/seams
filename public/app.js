@@ -19,7 +19,7 @@ function toast(html, ms = 4000) {
 }
 
 // ---------- avatars & formatting ----------
-const COLORS = ['#c4314b', '#5b5fc7', '#0f6cbd', '#038387', '#8764b8', '#ca5010', '#498205', '#b4009e'];
+const COLORS = ['#c4314b', '#5b5fc7', '#0f6cbd', '#038387', '#8764b8', '#a3420c', '#498205', '#b4009e'];
 const initials = (n) => String(n).split(/\s+/).map((w) => w[0]).join('').slice(0, 2).toUpperCase();
 function avatar(u, lg = false) {
   if (!u) return '';
@@ -29,7 +29,7 @@ function avatar(u, lg = false) {
 function convoAvatar(c) {
   if (c.kind === 'channel') return `<span class="av" style="background:${COLORS[c.id % COLORS.length]}" aria-hidden="true">#</span>`;
   const others = c.members.filter((m) => m.id !== S.me.id);
-  return others.length === 1 ? avatar(S.users.get(others[0].id) || others[0]) : `<span class="av" style="background:#8a8886" aria-hidden="true">${others.length}</span>`;
+  return others.length === 1 ? avatar(S.users.get(others[0].id) || others[0]) : `<span class="av" style="background:#6b6a69" aria-hidden="true">${others.length}</span>`;
 }
 function convoName(c) {
   if (c.kind === 'channel') return `${c.team} › ${c.name}`;
@@ -200,7 +200,7 @@ async function renderTeams() {
   const teams = Object.groupBy(channels, (c) => c.team);
   $('#teamList').innerHTML = Object.entries(teams).map(([t, cs]) => `<div class="group-title">⌄ ${esc(t)}</div>` + cs.map((c) =>
     S.convos.has(c.id) ? `<button class="item" data-convo="${c.id}"><span class="av" style="background:${COLORS[c.id % COLORS.length]}">#</span><span class="meta name">${esc(c.name)}</span></button>`
-      : `<button class="item" data-join="${c.id}"><span class="av" style="background:#8a8886">#</span><span class="meta"><div class="name">${esc(c.name)}</div><div class="sub">Click to join</div></span></button>`).join('')).join('')
+      : `<button class="item" data-join="${c.id}"><span class="av" style="background:#6b6a69">#</span><span class="meta"><div class="name">${esc(c.name)}</div><div class="sub">Click to join</div></span></button>`).join('')).join('')
     || '<p class="muted pad">No channels yet.</p>';
   $$('[data-join]').forEach((b) => b.onclick = async () => { await api(`/api/convos/${b.dataset.join}/join`, { method: 'POST' }); const { convos } = await api('/api/convos'); convos.forEach((c) => S.convos.set(c.id, c)); openConvo(+b.dataset.join); renderTeams(); });
 }
