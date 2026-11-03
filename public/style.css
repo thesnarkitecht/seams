@@ -114,6 +114,7 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 .reactions button { border: 1px solid var(--line); border-radius: 12px; padding: 0 8px; font-size: 12px; background: var(--main); }
 .reactions button.me { border-color: var(--brand); background: var(--brand-soft); }
 .preview { display: flex; margin-top: 8px; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; background: var(--main); text-decoration: none; color: inherit; max-width: 520px; }
+.bubble .preview { color: var(--text); }
 .preview img { width: 160px; height: 120px; object-fit: cover; flex: none; }
 .preview div { padding: 12px 16px; display: grid; gap: 4px; align-content: start; }
 .preview small { color: var(--muted); }

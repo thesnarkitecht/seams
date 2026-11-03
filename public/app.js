@@ -162,7 +162,7 @@ function renderList() {
   const all = [...S.convos.values()];
   const pass = (c) => S.filter === 'unread' ? c.unread > 0 : S.filter === 'channel' ? c.kind === 'channel' : S.filter === 'chat' ? c.kind !== 'channel' : true;
   const item = (c) => `<button class="item ${c.id === S.current ? 'active' : ''} ${c.unread ? 'unread' : ''}" data-convo="${c.id}">${convoAvatar(c)}
-    <span class="meta"><div class="name">${esc(convoName(c))}</div><div class="sub">${c.last ? esc((c.last.user_id === S.me.id ? 'You: ' : '') + (c.last.body || '📎 ' + (c.last.file?.name || 'file'))) : '&nbsp;'}</div></span>
+    <span class="meta"><div class="name">${esc(convoName(c))}</div><div class="sub">${c.last ? esc((c.last.user_id === S.me.id ? 'You: ' : '') + (c.last.body.replace(/[*`]/g, '') || '📎 ' + (c.last.file?.name || 'file'))) : '&nbsp;'}</div></span>
     ${c.unread ? `<span class="count">${c.unread}</span>` : ''}</button>`;
   const sect = (title, list) => list.length ? `<div class="group-title">⌄ ${title}</div>${list.map(item).join('')}` : '';
   const shown = all.filter(pass);
