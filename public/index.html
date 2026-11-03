@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Seams</title>
 <link rel="icon" href="/icon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
 <link rel="stylesheet" href="/style.css">
 </head>
 <body>
@@ -82,7 +85,7 @@
         <button class="icon" id="favBtn" title="Favorite" aria-label="Favorite"><svg viewBox="0 0 24 24"><path d="m12 3 2.8 5.8 6.2.9-4.5 4.4 1 6.2L12 17.4 6.5 20.3l1-6.2L3 9.7l6.2-.9z"/></svg></button>
         <button class="icon" id="leaveBtn" title="Leave" aria-label="Leave conversation"><svg viewBox="0 0 24 24"><path d="M14 4h5v16h-5M10 8l-4 4 4 4M6 12h10"/></svg></button>
       </div>
-      <div id="callBanner" class="call-banner hidden"><span id="callBannerText"></span><button class="primary" id="joinCallBtn">Join</button></div>
+      <div id="callBanner" class="call-banner hidden"><span class="live-dot" aria-hidden="true"></span><span id="callBannerText"></span><span class="spacer"></span><button class="ghost" id="joinAudioBtn">Join with audio</button><button class="primary" id="joinCallBtn">Join with video</button></div>
       <div class="tab" data-tabpane="chat">
         <div id="messages" class="messages" aria-live="polite"></div>
         <div class="typing" id="typing"></div>
@@ -107,16 +110,17 @@
 </div>
 
 <!-- call -->
-<div id="call" class="call hidden">
+<div id="call" class="call hidden" role="region" aria-label="Call">
+  <div class="call-top"><b id="callTitle"></b><span id="callStatus" class="call-status"></span></div>
   <div id="videos" class="videos"></div>
   <div class="call-bar">
-    <span id="callTitle"></span>
-    <button id="micBtn" class="round" aria-label="Mute">🎙</button>
-    <button id="camBtn" class="round" aria-label="Camera">📷</button>
-    <button id="screenBtn" class="round" aria-label="Share screen">🖥</button>
-    <button id="hangBtn" class="round danger" aria-label="Leave call">✕</button>
+    <button id="micBtn" class="ctl" title="Mute (M)"><span class="ic"></span><small>Mute</small></button>
+    <button id="camBtn" class="ctl" title="Camera (V)"><span class="ic"></span><small>Camera</small></button>
+    <button id="screenBtn" class="ctl"><span class="ic"></span><small>Share</small></button>
+    <button id="hangBtn" class="ctl hang"><span class="ic"></span><small>Leave</small></button>
   </div>
 </div>
+<div id="incoming" class="incoming hidden"></div>
 
 <dialog id="dialog"><form method="dialog" id="dialogForm"></form></dialog>
 <div id="toast" class="toast hidden" role="status"></div>

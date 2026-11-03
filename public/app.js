@@ -18,18 +18,35 @@ function toast(html, ms = 4000) {
   return t;
 }
 
-// ---------- avatars & formatting ----------
-const COLORS = ['#c4314b', '#5b5fc7', '#0f6cbd', '#038387', '#8764b8', '#a3420c', '#498205', '#b4009e'];
-const initials = (n) => String(n).split(/\s+/).map((w) => w[0]).join('').slice(0, 2).toUpperCase();
-function avatar(u, lg = false) {
-  if (!u) return '';
-  const c = COLORS[u.id % COLORS.length];
-  return `<span class="av ${lg ? 'lg' : ''} ${u.is_agent ? 'bot' : ''}" style="background:${c}" aria-hidden="true">${u.is_agent ? '🤖' : esc(initials(u.display))}<i class="dot ${u.online || u.is_agent ? 'on' : ''}" data-presence="${u.id}"></i></span>`;
+// ---------- avatars: GitHub-style identicons ----------
+const hash = (str) => { let h = 2166136261; for (const ch of String(str)) { h ^= ch.codePointAt(0); h = Math.imul(h, 16777619); } return h >>> 0; };
+const identicons = new Map();
+// 5x5 grid mirrored left-to-right, one hue per name, the same on every device
+function identicon(seed) {
+  if (identicons.has(seed)) return identicons.get(seed);
+  const h = hash(seed);
+  let bits = hash(seed + '#cells') & 0x7fff;
+  if (!bits) bits = h & 0x7fff || 0x1b6d;
+  const color = `hsl(${h % 360} ${48 + ((h >>> 9) % 22)}% ${40 + ((h >>> 15) % 14)}%)`;
+  let cells = '';
+  for (let x = 0; x < 3; x++) for (let y = 0; y < 5; y++) if ((bits >>> (x * 5 + y)) & 1) {
+    cells += `<rect x="${x}" y="${y}" width="1.02" height="1.02"/>`;
+    if (x < 2) cells += `<rect x="${4 - x}" y="${y}" width="1.02" height="1.02"/>`;
+  }
+  const svg = `<svg class="idn" viewBox="-0.9 -0.9 6.8 6.8" aria-hidden="true"><rect x="-0.9" y="-0.9" width="6.8" height="6.8" fill="var(--idn-bg)"/><g fill="${color}">${cells}</g></svg>`;
+  identicons.set(seed, svg);
+  return svg;
 }
+function avatar(u, size = '') {
+  if (!u) return '';
+  return `<span class="av ${size === true ? 'lg' : size} ${u.is_agent ? 'bot' : ''}" aria-hidden="true">${identicon(u.name || u.display)}<i class="dot ${u.online || u.is_agent ? 'on' : ''}" data-presence="${u.id}"></i></span>`;
+}
+const chanAvatar = (c) => `<span class="av chan" aria-hidden="true">#</span>`;
 function convoAvatar(c) {
-  if (c.kind === 'channel') return `<span class="av" style="background:${COLORS[c.id % COLORS.length]}" aria-hidden="true">#</span>`;
+  if (c.kind === 'channel') return chanAvatar(c);
   const others = c.members.filter((m) => m.id !== S.me.id);
-  return others.length === 1 ? avatar(S.users.get(others[0].id) || others[0]) : `<span class="av" style="background:#6b6a69" aria-hidden="true">${others.length}</span>`;
+  if (others.length <= 1) return avatar(S.users.get(others[0]?.id) || others[0] || S.me);
+  return `<span class="av stack" aria-hidden="true">${identicon(others[0].name)}${identicon(others[1].name)}</span>`;
 }
 function convoName(c) {
   if (c.kind === 'channel') return `${c.team} › ${c.name}`;
@@ -86,6 +103,7 @@ document.addEventListener('click', (e) => {
 async function start() {
   if (!S.token) return showAuth();
   try { S.me = (await api('/api/me')).user; } catch { localStorage.removeItem('seams_token'); return showAuth(); }
+  api('/api/config').then((c) => { if (c.iceServers?.length) ICE = { iceServers: c.iceServers }; }).catch(() => {});
   $('#auth').classList.add('hidden'); $('#app').classList.remove('hidden');
   $('#meBtn').innerHTML = avatar(S.me); $('#meName').textContent = `${S.me.display} (@${S.me.name})`;
   const [{ users }, { convos }] = await Promise.all([api('/api/users'), api('/api/convos')]);
@@ -137,18 +155,42 @@ function onEvent(ev) {
     case 'calls': S.calls = ev.calls; renderCallBanner(); break;
     case 'call_state': {
       S.calls[ev.convo_id] = ev.participants; if (!ev.participants.length) delete S.calls[ev.convo_id];
-      if (ev.caller && ev.caller.id !== S.me.id && ev.participants.length === 1 && !call) ringing(ev.convo_id, ev.caller);
-      if (ev.left && call?.convo === ev.convo_id) dropPeer(ev.left);
+      if (ev.caller && ev.caller.id !== S.me.id && ev.participants.length === 1 && !call) ringing(ev.convo_id, ev.caller, ev.video);
+      if (!ev.participants.length && ring?.cid === ev.convo_id) stopRing();
+      if (call?.convo === ev.convo_id) {
+        if (ev.left) dropPeer(ev.left);
+        if (ev.joined && ev.joined !== S.me.id) sendMedia(); // tell the newcomer whether we're muted / on camera
+        if (call.alone && ev.participants.length > 1) { call.alone = false; call.started = Date.now(); call.ringback?.(); clearTimeout(call.noAnswer); }
+      }
       renderCallBanner(); break;
     }
-    case 'call_peers': if (call?.convo === ev.convo_id) ev.peers.forEach((p) => makePeer(p, true)); break;
+    case 'call_decline':
+      if (call?.convo === ev.convo_id && call.alone && ev.user.id !== S.me.id) {
+        toast(`${esc(ev.user.display)} declined the call.`);
+        if (S.convos.get(ev.convo_id)?.kind === 'dm') endCall();
+      }
+      break;
+    case 'media':
+      if (call?.convo === ev.convo_id && ev.user_id !== S.me.id) { call.media.set(ev.user_id, { mic: ev.mic, cam: ev.cam }); refreshTile(ev.user_id); }
+      break;
+    case 'call_peers': if (call?.convo === ev.convo_id) ev.peers.forEach((p) => makePeer(p)); break;
     case 'signal': onSignal(ev); break;
   }
 }
 function clearTyping(cid, uid) { if (typingTimers[cid]) delete typingTimers[cid][uid]; renderTyping(); }
 function renderTyping() {
-  const t = Object.entries(typingTimers[S.current] || {}).filter(([uid, v]) => Date.now() - v.t < (S.users.get(+uid)?.is_agent ? 60000 : 4000)).map(([, v]) => v.name);
-  $('#typing').textContent = t.length ? `${t.join(', ')} ${t.length > 1 ? 'are' : 'is'} typing…` : '';
+  const now = Date.now();
+  const who = Object.entries(typingTimers[S.current] || {})
+    .filter(([uid, v]) => now - v.t < (S.users.get(+uid)?.is_agent ? 60000 : 4000))
+    .map(([uid, v]) => ({ u: S.users.get(+uid) || { id: +uid, name: v.name, display: v.name }, name: v.name }));
+  const el = $('#typing'), key = who.map((w) => w.u.id).join();
+  if (el.dataset.key === key) return; // keep the dots animating smoothly
+  el.dataset.key = key;
+  if (!who.length) { el.innerHTML = ''; return; }
+  const agents = who.every((w) => w.u.is_agent), n = who.length;
+  const names = n > 2 ? `${who[0].name} and ${n - 1} others` : who.map((w) => w.name).join(' and ');
+  el.innerHTML = `<span class="typing-avs">${who.slice(0, 3).map((w) => avatar(w.u, 'xs')).join('')}</span>
+    <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span><span>${esc(names)} ${n > 1 ? 'are' : 'is'} ${agents ? 'thinking' : 'typing'}…</span>`;
 }
 function notify(c, m) {
   if (document.visibilityState === 'visible' && S.current === c.id) return;
@@ -199,8 +241,8 @@ async function renderTeams() {
   const { channels } = await api('/api/channels');
   const teams = Object.groupBy(channels, (c) => c.team);
   $('#teamList').innerHTML = Object.entries(teams).map(([t, cs]) => `<div class="group-title">⌄ ${esc(t)}</div>` + cs.map((c) =>
-    S.convos.has(c.id) ? `<button class="item" data-convo="${c.id}"><span class="av" style="background:${COLORS[c.id % COLORS.length]}">#</span><span class="meta name">${esc(c.name)}</span></button>`
-      : `<button class="item" data-join="${c.id}"><span class="av" style="background:#6b6a69">#</span><span class="meta"><div class="name">${esc(c.name)}</div><div class="sub">Click to join</div></span></button>`).join('')).join('')
+    S.convos.has(c.id) ? `<button class="item" data-convo="${c.id}">${chanAvatar(c)}<span class="meta name">${esc(c.name)}</span></button>`
+      : `<button class="item" data-join="${c.id}"><span class="av chan muted-chan">#</span><span class="meta"><div class="name">${esc(c.name)}</div><div class="sub">Click to join</div></span></button>`).join('')).join('')
     || '<p class="muted pad">No channels yet.</p>';
   $$('[data-join]').forEach((b) => b.onclick = async () => { await api(`/api/convos/${b.dataset.join}/join`, { method: 'POST' }); const { convos } = await api('/api/convos'); convos.forEach((c) => S.convos.set(c.id, c)); openConvo(+b.dataset.join); renderTeams(); });
 }
@@ -252,7 +294,7 @@ function messageHtml(m, prev) {
   const preview = p ? `<a class="preview" href="${esc(p.url)}" target="_blank" rel="noopener noreferrer">${p.image && /^https:/.test(p.image) ? `<img src="${esc(p.image)}" alt="" referrerpolicy="no-referrer" loading="lazy">` : ''}<div><b>${esc(p.title)}</b><span>${esc(p.description)}</span><small>${esc(p.site)}</small></div></a>` : '';
   const reactions = Object.entries(m.reactions || {}).map(([e, ids]) => `<button data-react="${m.id}" data-emoji="${esc(e)}" class="${ids.includes(S.me.id) ? 'me' : ''}" title="${esc(ids.map((i) => S.users.get(i)?.display).join(', '))}">${esc(e)} ${ids.length}</button>`).join('');
   return `<div class="msg ${mine ? 'mine' : ''} ${cont ? 'cont' : ''}" data-id="${m.id}">${avatar(u)}
-    <div class="body"><div class="head">${mine ? '' : `<b>${esc(m.display)}</b>`}${fmtTime(m.ts)}</div>
+    <div class="body"><div class="head">${mine ? '' : `<b>${esc(m.display)}</b>${u.is_agent ? '<span class="tag">bot</span>' : ''}`}<time>${fmtTime(m.ts)}</time></div>
     ${m.body ? `<div class="bubble">${md(m.body)}${preview}</div>` : ''}${file}
     ${reactions ? `<div class="reactions">${reactions}</div>` : ''}</div>
     <div class="actions">${['👍', '❤️', '😆', '😮', '😢'].map((e) => `<button data-react="${m.id}" data-emoji="${e}" aria-label="React ${e}">${e}</button>`).join('')}
@@ -462,93 +504,223 @@ $('#newAgentBtn').onclick = async () => {
 };
 
 // ---------- calls (WebRTC mesh) ----------
-let call = null; // { convo, stream, peers: Map<uid, RTCPeerConnection>, video }
-const ICE = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+let call = null; // { convo, stream, screen, peers: Map<uid, RTCPeerConnection>, media: Map<uid, {mic, cam}>, alone, started }
+let ring = null, audioCtx = null;
+let ICE = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+const ICON = {
+  mic: '<svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>',
+  micOff: '<svg viewBox="0 0 24 24"><path d="M15 10V6a3 3 0 0 0-5.7-1.3M9 9v2a3 3 0 0 0 4.6 2.5M5 11a7 7 0 0 0 11.5 5.4M19 11a7 7 0 0 1-.6 2.8M12 18v3M4 4l16 16"/></svg>',
+  cam: '<svg viewBox="0 0 24 24"><rect x="3" y="6" width="13" height="12" rx="2"/><path d="m16 10 5-3v10l-5-3"/></svg>',
+  camOff: '<svg viewBox="0 0 24 24"><path d="M16 16v1a1 1 0 0 1-1 1H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h1m4 0h5a1 1 0 0 1 1 1v3l5-3v10M3 3l18 18"/></svg>',
+  screen: '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4M12 13V7M9 10l3-3 3 3"/></svg>',
+  hang: '<svg viewBox="0 0 24 24"><path d="M3 15c5-5 13-5 18 0l-2.5 2.5-3-1.5v-2.5a10 10 0 0 0-5 0V16l-3 1.5z"/></svg>',
+  phone: '<svg viewBox="0 0 24 24"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"/></svg>',
+};
+$('#hangBtn .ic').innerHTML = ICON.hang; $('#screenBtn .ic').innerHTML = ICON.screen;
+
+// soft repeating beeps for ringing; returns a stop function
+function tone(freqs, every) {
+  let ctx; try { ctx = new AudioContext(); } catch { return () => {}; }
+  const beep = () => freqs.forEach((f, i) => {
+    const o = ctx.createOscillator(), g = ctx.createGain(), t = ctx.currentTime + i * 0.22;
+    o.frequency.value = f; g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.07, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.2);
+    o.connect(g).connect(ctx.destination); o.start(t); o.stop(t + 0.22);
+  });
+  beep(); const timer = setInterval(beep, every);
+  return () => { clearInterval(timer); ctx.close().catch(() => {}); };
+}
+
 function renderCallBanner() {
   const p = S.calls[S.current];
   const show = p?.length && call?.convo !== S.current;
   $('#callBanner').classList.toggle('hidden', !show);
-  if (show) $('#callBannerText').textContent = `📞 Call in progress · ${p.map((id) => S.users.get(id)?.display).join(', ')}`;
+  if (show) $('#callBannerText').textContent = `Call in progress with ${p.map((id) => S.users.get(id)?.display).join(', ')}`;
 }
-function ringing(cid, caller) {
-  const c = S.convos.get(cid); if (!c) return;
-  const t = toast(`📞 ${esc(caller.display)} is calling${c.kind === 'channel' ? ' in ' + esc(convoName(c)) : ''} <button class="primary" id="ansV">Video</button><button class="primary" id="ansA">Audio</button><button id="ansX">✕</button>`, 30000);
-  $('#ansV', t).onclick = () => { t.classList.add('hidden'); openConvo(cid); startCall(cid, true); };
-  $('#ansA', t).onclick = () => { t.classList.add('hidden'); openConvo(cid); startCall(cid, false); };
-  $('#ansX', t).onclick = () => t.classList.add('hidden');
+function ringing(cid, caller, video) {
+  const c = S.convos.get(cid); if (!c || ring) return;
+  const box = $('#incoming');
+  box.innerHTML = `<div class="incoming-card" role="alertdialog" aria-labelledby="incName">
+    <div class="ring">${avatar(caller, 'xl')}</div>
+    <h2 id="incName">${esc(caller.display)}</h2>
+    <p class="muted">Incoming ${video ? 'video' : 'audio'} call${c.kind === 'channel' ? ' in ' + esc(convoName(c)) : ''}</p>
+    <div class="answer">
+      <button class="ctl" data-ans="no"><span class="ic decline">${ICON.hang}</span><small>Decline</small></button>
+      <button class="ctl" data-ans="audio"><span class="ic accept">${ICON.phone}</span><small>Audio</small></button>
+      <button class="ctl" data-ans="video"><span class="ic accept">${ICON.cam}</span><small>Video</small></button>
+    </div></div>`;
+  box.classList.remove('hidden');
+  ring = { cid, stop: tone([523, 659], 2600), timer: setTimeout(stopRing, 45000) };
+  box.querySelector(`[data-ans="${video ? 'video' : 'audio'}"]`).focus();
+  box.onclick = (e) => {
+    const a = e.target.closest('[data-ans]')?.dataset.ans; if (!a) return;
+    stopRing();
+    if (a === 'no') wsSend({ type: 'call_decline', convo_id: cid });
+    else { openConvo(cid); startCall(cid, a === 'video'); }
+  };
 }
+function stopRing() { if (!ring) return; ring.stop(); clearTimeout(ring.timer); ring = null; $('#incoming').classList.add('hidden'); }
+
 $('#videoBtn').onclick = () => startCall(S.current, true);
 $('#audioBtn').onclick = () => startCall(S.current, false);
 $('#joinCallBtn').onclick = () => startCall(S.current, true);
+$('#joinAudioBtn').onclick = () => startCall(S.current, false);
+
 async function startCall(cid, video) {
   if (call) return toast('You are already in a call.');
+  const getMedia = (v) => navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true }, video: v && { width: { ideal: 1280 }, height: { ideal: 720 } } });
   let stream;
-  try { stream = await navigator.mediaDevices.getUserMedia({ audio: true, video }); }
-  catch (err) { return toast('Could not access microphone/camera: ' + esc(err.message)); }
-  call = { convo: cid, stream, peers: new Map(), video };
-  $('#call').classList.remove('hidden'); $('#callTitle').textContent = convoName(S.convos.get(cid));
-  $('#videos').innerHTML = ''; addTile('me', stream, S.me.display + ' (you)');
-  $('#camBtn').classList.toggle('off', !video); $('#micBtn').classList.remove('off');
-  wsSend({ type: 'call_join', convo_id: cid });
-  renderCallBanner();
+  try { stream = await getMedia(video); }
+  catch {
+    if (video) try { stream = await getMedia(false); video = false; toast('No camera available, so you joined with audio only.'); } catch {}
+    if (!stream) return toast('Calls need microphone access. Allow it in your browser’s site settings, then try again.', 6000);
+  }
+  const joining = S.calls[cid]?.length > 0;
+  call = { convo: cid, stream, peers: new Map(), media: new Map(), video, alone: !joining, started: Date.now() };
+  $('#call').classList.remove('hidden');
+  $('#callTitle').textContent = convoName(S.convos.get(cid));
+  $('#videos').innerHTML = '';
+  addTile('me', stream, S.me);
+  if (!joining) {
+    call.ringback = tone([440], 3000);
+    call.noAnswer = setTimeout(() => { if (call?.alone) { toast('No answer.'); endCall(); } }, 45000);
+  }
+  call.clock = setInterval(callClock, 1000); callClock();
+  wsSend({ type: 'call_join', convo_id: cid, video });
+  sendMedia(); renderCallBanner();
 }
-function addTile(id, stream, label) {
+function callClock() {
+  if (!call) return;
+  const s = Math.floor((Date.now() - call.started) / 1000);
+  $('#callStatus').textContent = call.alone ? 'Calling…' : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+function myMedia() {
+  const v = (call.screen || call.stream).getVideoTracks()[0];
+  return { mic: !!call.stream.getAudioTracks()[0]?.enabled, cam: !!v && v.enabled && v.readyState === 'live' };
+}
+function sendMedia() {
+  if (!call) return;
+  const m = myMedia();
+  wsSend({ type: 'media', convo_id: call.convo, ...m });
+  $('#micBtn').classList.toggle('off', !m.mic); $('#micBtn .ic').innerHTML = m.mic ? ICON.mic : ICON.micOff; $('#micBtn small').textContent = m.mic ? 'Mute' : 'Unmute';
+  const camOn = !!call.stream.getVideoTracks()[0]?.enabled;
+  $('#camBtn').classList.toggle('off', !camOn); $('#camBtn .ic').innerHTML = camOn ? ICON.cam : ICON.camOff;
+  $('#screenBtn').classList.toggle('on', !!call.screen); $('#screenBtn small').textContent = call.screen ? 'Stop sharing' : 'Share';
+  refreshTile('me');
+}
+function addTile(id, stream, u) {
   let t = $(`#tile-${id}`);
-  if (!t) { t = document.createElement('div'); t.className = 'tile' + (id === 'me' ? ' me' : ''); t.id = 'tile-' + id; t.innerHTML = `<video autoplay playsinline ${id === 'me' ? 'muted' : ''}></video><span>${esc(label)}</span>`; $('#videos').append(t); }
-  $('video', t).srcObject = stream;
+  if (!t) {
+    t = document.createElement('div');
+    t.className = 'tile' + (id === 'me' ? ' me' : ''); t.id = 'tile-' + id;
+    t.innerHTML = `<video autoplay playsinline ${id === 'me' ? 'muted' : ''}></video><div class="tile-av">${avatar(u, 'xl')}</div>
+      <span class="tile-name"><i class="mic-off" hidden>${ICON.micOff}</i>${esc(id === 'me' ? 'You' : u.display)}</span>`;
+    $('#videos').append(t);
+    $('#videos').dataset.n = $$('#videos .tile').length;
+  }
+  const v = $('video', t);
+  if (v.srcObject !== stream) v.srcObject = stream;
+  watchSpeaking(t, stream); refreshTile(id);
 }
-function makePeer(uid, initiator) {
+function refreshTile(id) {
+  const t = $(`#tile-${id}`); if (!t || !call) return;
+  const m = id === 'me' ? myMedia() : { mic: true, cam: false, ...call.media.get(id) };
+  t.classList.toggle('novideo', !m.cam);
+  t.classList.toggle('screen', id === 'me' && !!call.screen);
+  $('.mic-off', t).hidden = m.mic;
+}
+// green outline on whoever is talking
+function watchSpeaking(t, stream) {
+  const track = stream.getAudioTracks()[0];
+  if (!track || t.audioTrack === track) return;
+  t.audioTrack = track;
+  try {
+    audioCtx ??= new AudioContext();
+    const an = audioCtx.createAnalyser(); an.fftSize = 512;
+    audioCtx.createMediaStreamSource(new MediaStream([track])).connect(an);
+    const buf = new Uint8Array(an.fftSize);
+    const tick = () => {
+      if (!t.isConnected || t.audioTrack !== track) return;
+      an.getByteTimeDomainData(buf);
+      let sum = 0; for (const v of buf) sum += (v - 128) ** 2;
+      t.classList.toggle('speaking', track.enabled && Math.sqrt(sum / buf.length) > 4);
+      setTimeout(tick, 150);
+    };
+    tick();
+  } catch {}
+}
+function makePeer(uid) {
   if (call.peers.has(uid)) return call.peers.get(uid);
   const pc = new RTCPeerConnection(ICE);
   call.peers.set(uid, pc);
   call.stream.getTracks().forEach((t) => pc.addTrack(t, call.stream));
-  if (!call.video) pc.addTransceiver('video', { direction: 'recvonly' }); // still see others' cameras
+  if (!call.stream.getVideoTracks().length) pc.addTransceiver('video', { direction: 'recvonly' }); // still see others' cameras
   pc.onicecandidate = (e) => e.candidate && wsSend({ type: 'signal', convo_id: call.convo, to: uid, data: { candidate: e.candidate } });
-  pc.ontrack = (e) => addTile(uid, e.streams[0], S.users.get(uid)?.display || 'Guest');
+  pc.ontrack = (e) => addTile(uid, e.streams[0] || new MediaStream([e.track]), S.users.get(uid) || { id: uid, name: 'guest', display: 'Guest' });
   pc.onconnectionstatechange = () => pc.connectionState === 'failed' && dropPeer(uid);
-  if (initiator) pc.onnegotiationneeded = async () => {
-    await pc.setLocalDescription(await pc.createOffer());
-    wsSend({ type: 'signal', convo_id: call.convo, to: uid, data: { sdp: pc.localDescription } });
+  // "perfect negotiation": either side may renegotiate (camera on, screen share); the lower user id yields on collisions
+  pc.onnegotiationneeded = async () => {
+    try { pc.making = true; await pc.setLocalDescription(); wsSend({ type: 'signal', convo_id: call.convo, to: uid, data: { sdp: pc.localDescription } }); }
+    catch (err) { console.warn('negotiate', err); } finally { pc.making = false; }
   };
   return pc;
 }
 async function onSignal({ from, convo_id, data }) {
   if (!call || call.convo !== convo_id) return;
-  const pc = makePeer(from, false);
+  const pc = makePeer(from), polite = S.me.id < from;
   try {
     if (data.sdp) {
+      const collision = data.sdp.type === 'offer' && (pc.making || pc.signalingState !== 'stable');
+      pc.ignoreOffer = !polite && collision;
+      if (pc.ignoreOffer) return;
       await pc.setRemoteDescription(data.sdp);
-      if (data.sdp.type === 'offer') { await pc.setLocalDescription(await pc.createAnswer()); wsSend({ type: 'signal', convo_id, to: from, data: { sdp: pc.localDescription } }); }
-    } else if (data.candidate) await pc.addIceCandidate(data.candidate);
+      if (data.sdp.type === 'offer') { await pc.setLocalDescription(); wsSend({ type: 'signal', convo_id, to: from, data: { sdp: pc.localDescription } }); }
+    } else if (data.candidate) await pc.addIceCandidate(data.candidate).catch((e) => { if (!pc.ignoreOffer) throw e; });
   } catch (err) { console.warn('signal', err); }
 }
-function dropPeer(uid) { call?.peers.get(uid)?.close(); call?.peers.delete(uid); $(`#tile-${uid}`)?.remove(); }
+function dropPeer(uid) {
+  call?.peers.get(uid)?.close(); call?.peers.delete(uid); call?.media.delete(uid);
+  $(`#tile-${uid}`)?.remove(); $('#videos').dataset.n = $$('#videos .tile').length;
+}
 function endCall() {
   if (!call) return;
   wsSend({ type: 'call_leave', convo_id: call.convo });
-  call.peers.forEach((pc) => pc.close()); call.stream.getTracks().forEach((t) => t.stop()); call.screen?.getTracks().forEach((t) => t.stop());
+  call.ringback?.(); clearTimeout(call.noAnswer); clearInterval(call.clock);
+  call.peers.forEach((pc) => pc.close());
+  call.stream.getTracks().forEach((t) => t.stop()); call.screen?.getTracks().forEach((t) => t.stop());
+  audioCtx?.close().catch(() => {}); audioCtx = null;
   call = null; $('#call').classList.add('hidden'); renderCallBanner();
 }
 $('#hangBtn').onclick = endCall;
 window.addEventListener('beforeunload', endCall);
-$('#micBtn').onclick = () => { const t = call.stream.getAudioTracks()[0]; t.enabled = !t.enabled; $('#micBtn').classList.toggle('off', !t.enabled); };
+document.addEventListener('keydown', (e) => {
+  if (!call || e.target.matches('input, textarea')) return;
+  if (e.key === 'm') $('#micBtn').click();
+  if (e.key === 'v') $('#camBtn').click();
+});
+$('#micBtn').onclick = () => { const t = call.stream.getAudioTracks()[0]; if (t) t.enabled = !t.enabled; sendMedia(); };
+// the transceiver that carries our video to each peer (created by addTrack or as recvonly)
+const videoTx = (pc) => pc.getTransceivers().find((x) => x.receiver.track.kind === 'video');
 $('#camBtn').onclick = async () => {
   let t = call.stream.getVideoTracks()[0];
-  if (!t) { // audio call → turn camera on
-    t = (await navigator.mediaDevices.getUserMedia({ video: true })).getVideoTracks()[0];
-    call.stream.addTrack(t); call.peers.forEach((pc) => { const tr = pc.getTransceivers().find((x) => x.receiver.track.kind === 'video'); if (tr) { tr.direction = 'sendrecv'; tr.sender.replaceTrack(t); } else pc.addTrack(t, call.stream); });
-    addTile('me', call.stream, S.me.display + ' (you)'); $('#camBtn').classList.remove('off'); return;
-  }
-  t.enabled = !t.enabled; $('#camBtn').classList.toggle('off', !t.enabled);
+  if (!t) { // joined audio-only: turn the camera on now
+    try { t = (await navigator.mediaDevices.getUserMedia({ video: true })).getVideoTracks()[0]; } catch { return toast('Seams could not open your camera.'); }
+    call.stream.addTrack(t);
+    call.peers.forEach((pc) => { const tx = videoTx(pc); if (tx) { tx.direction = 'sendrecv'; if (!call.screen) tx.sender.replaceTrack(t); } else pc.addTrack(t, call.stream); });
+    if (!call.screen) addTile('me', call.stream, S.me);
+  } else t.enabled = !t.enabled;
+  sendMedia();
 };
 $('#screenBtn').onclick = async () => {
-  const cam = call.stream.getVideoTracks()[0];
-  const swap = (track) => call.peers.forEach((pc) => pc.getSenders().find((s) => s.track?.kind === 'video' || (!s.track && s === pc.getTransceivers().find((x) => x.receiver.track.kind === 'video')?.sender))?.replaceTrack(track));
-  if (call.screen) { call.screen.getTracks().forEach((t) => t.stop()); call.screen = null; swap(cam || null); $('#screenBtn').classList.remove('off'); addTile('me', call.stream, S.me.display + ' (you)'); return; }
+  const cam = call.stream.getVideoTracks()[0] || null;
+  const swap = (track) => call.peers.forEach((pc) => { const tx = videoTx(pc); if (tx) { if (tx.direction === 'recvonly') tx.direction = 'sendrecv'; tx.sender.replaceTrack(track); } });
+  if (call.screen) {
+    call.screen.getTracks().forEach((t) => t.stop()); call.screen = null;
+    swap(cam); addTile('me', call.stream, S.me); return sendMedia();
+  }
   try { call.screen = await navigator.mediaDevices.getDisplayMedia({ video: true }); } catch { return; }
   const st = call.screen.getVideoTracks()[0];
-  call.peers.forEach((pc) => { const tr = pc.getTransceivers().find((x) => x.receiver.track.kind === 'video'); if (tr && tr.direction === 'recvonly') tr.direction = 'sendrecv'; });
-  swap(st); addTile('me', call.screen, 'Your screen'); $('#screenBtn').classList.add('off');
+  swap(st); addTile('me', new MediaStream([st, ...call.stream.getAudioTracks()]), S.me); sendMedia();
   st.onended = () => call?.screen && $('#screenBtn').click();
 };
 

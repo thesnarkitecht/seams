@@ -13,6 +13,7 @@ const PORT = +process.env.PORT || 3000;
 const DATA = process.env.SEAMS_DATA || path.resolve('data');
 const OPEN_SIGNUP = process.env.SEAMS_OPEN_SIGNUP !== 'false';
 const PUBLIC = path.resolve(import.meta.dirname, 'public');
+const ICE_SERVERS = JSON.parse(process.env.SEAMS_ICE_SERVERS || '[{"urls":"stun:stun.l.google.com:19302"}]');
 fs.mkdirSync(path.join(DATA, 'files'), { recursive: true });
 
 export const db = new DatabaseSync(path.join(DATA, 'seams.db'));
@@ -176,6 +177,8 @@ const routes = {
   },
   'POST /api/logout': async (req) => { q('DELETE FROM sessions WHERE token=?').run(req.headers.authorization?.replace(/^Bearer /, '')); return {}; },
   'GET /api/me': async (req, u) => ({ user: pubUser(u), signup: OPEN_SIGNUP }),
+  // STUN/TURN for calls. Set SEAMS_ICE_SERVERS to a JSON array, e.g. [{"urls":"turn:turn.example.com:3478","username":"u","credential":"p"}]
+  'GET /api/config': async () => ({ iceServers: ICE_SERVERS }),
   'GET /api/users': async () => ({ users: q('SELECT * FROM users ORDER BY is_agent, display').all().map(pubUser) }),
   'GET /api/convos': async (req, u) => ({
     convos: q('SELECT c.* FROM convos c JOIN members m ON m.convo_id=c.id WHERE m.user_id=?').all(u.id).map((c) => convoView(c, u.id))
@@ -354,8 +357,10 @@ wss.on('connection', (ws, req) => {
       calls.get(cid).add(user.id);
       ws.callConvo = cid;
       send(user.id, { type: 'call_peers', convo_id: cid, peers });
-      toConvo(cid, { type: 'call_state', convo_id: cid, participants: [...calls.get(cid)], caller: pubUser(user), joined: user.id });
+      toConvo(cid, { type: 'call_state', convo_id: cid, participants: [...calls.get(cid)], caller: pubUser(user), joined: user.id, video: !!m.video });
     } else if (m.type === 'call_leave') leaveCall(user.id, cid);
+    else if (m.type === 'call_decline') toConvo(cid, { type: 'call_decline', convo_id: cid, user: pubUser(user) });
+    else if (m.type === 'media' && calls.get(cid)?.has(user.id)) toConvo(cid, { type: 'media', convo_id: cid, user_id: user.id, mic: !!m.mic, cam: !!m.cam });
     else if (m.type === 'signal' && calls.get(cid)?.has(Number(m.to))) send(Number(m.to), { type: 'signal', convo_id: cid, from: user.id, data: m.data });
   });
   ws.on('close', () => {

@@ -86,6 +86,7 @@
 
   const routes = [
     ['GET', /^\/api\/me$/, () => ({ user: find(me), signup: true })],
+    ['GET', /^\/api\/config$/, () => ({ iceServers: [] })],
     ['POST', /^\/api\/(login|register|logout)$/, () => ({ token: 'demo' })],
     ['GET', /^\/api\/users$/, () => ({ users })],
     ['GET', /^\/api\/convos$/, () => ({ convos: convos.filter((c) => c.members.includes(me)).map(view).sort((a, b) => (b.last?.ts || 0) - (a.last?.ts || 0)) })],

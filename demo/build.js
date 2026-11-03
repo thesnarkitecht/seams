@@ -20,6 +20,7 @@ const app = read('public/app.js')
 for (const [needle, src] of [['safeStore.', app], ['demoConfirm(', app], ['__seamsDemo', app], ['demo-pill', body]]) if (!src.includes(needle)) throw new Error('demo build: patch failed for ' + needle);
 
 fs.writeFileSync(out, `<title>Seams</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
 <style>${read('public/style.css')}
 html, body { height: 100%; }
 .demo-pill { font-size: 11px; font-weight: 600; color: var(--brand); background: var(--brand-soft); border-radius: 10px; padding: 1px 8px; margin-left: 6px; }

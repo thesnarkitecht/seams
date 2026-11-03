@@ -29,10 +29,21 @@ docker compose up -d
 | `SEAMS_DATA` | `./data` | Where the database and uploaded files live (back this up) |
 | `SEAMS_OPEN_SIGNUP` | `true` | Set `false` to stop new sign-ups once your team is in |
 | `ANTHROPIC_API_KEY` | none | Turns on built-in Claude agents |
+| `SEAMS_ICE_SERVERS` | Google STUN | JSON list of STUN/TURN servers for calls, e.g. `[{"urls":"turn:turn.example.com:3478","username":"u","credential":"p"}]` |
 
 Requires Node 22.13 or newer, for the built-in `node:sqlite`.
 
 **Video calls outside localhost need HTTPS**, because browsers only allow the camera on secure origins. Put Seams behind a reverse proxy such as Caddy (`caddy reverse-proxy --from chat.example.com --to localhost:3000`), which handles certificates and WebSockets for you. Calls use a public STUN server. People behind strict corporate NATs may also need a TURN server.
+
+## Put it online
+
+**Render (easiest):** `render.yaml` is included. In Render, choose **New → Blueprint**, pick this repo, and set `ANTHROPIC_API_KEY` if you want Claude agents. You get an HTTPS URL, so calls work right away, and the database lives on a 1 GB disk. Disks need a paid plan.
+
+**Any VPS:** install Docker, run `docker compose up -d`, then put Caddy in front for HTTPS.
+
+## Calls
+
+Calls connect people directly (WebRTC). The ringing screen lets people answer with video or audio only, or decline. A green outline shows who is speaking, and muted people show a crossed-out mic. Shortcuts: **M** mutes, **V** toggles the camera. Calls work best with up to about 6 people. If people on locked-down networks can't connect, add a TURN server via `SEAMS_ICE_SERVERS`.
 
 ## Agents
 
