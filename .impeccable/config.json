@@ -1,0 +1,17 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "pulsing-dot",
+        "value": "*",
+        "files": [
+          "public/index.html"
+        ],
+        "createdAt": "2026-11-03T21:38:01.647Z",
+        "reason": "Claude: the pulses mark a genuinely live call (call-in-progress banner and the ringing caller avatar), and both stop under prefers-reduced-motion"
+      }
+    ]
+  }
+}

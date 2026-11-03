@@ -1,0 +1,19 @@
+{
+  "name": "seams",
+  "version": "0.1.0",
+  "description": "Self-hosted team chat, video calls and AI agents in one small Node server.",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning server.js",
+    "test": "node --disable-warning=ExperimentalWarning --test test/*.test.js"
+  },
+  "engines": {
+    "node": ">=22.13"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.4.0",
+    "ws": "^8.22.1"
+  }
+}
