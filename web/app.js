@@ -80,7 +80,7 @@
     api: null, me: null, mode: 'demo', serverDemo: false, signedOut: false, error: null,
     view: 'chat', filter: null, q: '', chats: [], teams: [], open: null, items: [], loading: false,
     tab: 'chat', collapsed: store.get('collapsed', { teams: true }), favs: store.get('favs', null), presence: {}, myStatus: 'Available',
-    replyTo: null, editing: null, typing: null, history: [], fwd: [], mentions: [],
+    replyTo: null, editing: null, typing: null, history: [], fwd: [], mentions: [], pinned: true, drafts: {},
   };
 
   // ---------- formatting ----------
@@ -173,15 +173,24 @@
   function render() {
     if (!S.me) { app.innerHTML = `<div class="empty"><div class="framed"><h3>${S.error ? 'Seams could not start' : 'Opening Seams'}</h3><p>${esc(S.error || 'Loading your chats')}</p></div></div>`; return; }
     if (S.signedOut) return renderSignedOut();
-    const focusId = document.activeElement?.id; const draft = $('#box')?.value;
+    const focusId = document.activeElement?.id; const caret = document.activeElement?.selectionStart;
     const scroll = $('.lscroll')?.scrollTop;
+    const st = $('#stream'); const streamTop = st ? st.scrollTop : null; const streamKey = st?.dataset.key;
+    const rbox = $('#rbox')?.value;
     app.innerHTML = `<div class="app ${S.open ? 'in-conv' : ''}">
       ${topbar()}
       <div class="body">${rail()}${listPane()}<main class="conv" aria-label="Conversation">${convPane()}</main></div>
     </div>`;
     if (scroll != null && $('.lscroll')) $('.lscroll').scrollTop = scroll;
-    if (draft != null && $('#box')) { $('#box').value = draft; autosize($('#box')); }
-    if (focusId && document.getElementById(focusId)) { const el = document.getElementById(focusId); el.focus(); if (el.setSelectionRange && el.value) el.setSelectionRange(el.value.length, el.value.length); }
+    const box = $('#box');
+    if (box) { box.value = S.editing ? S.editDraft || '' : S.drafts[draftKey()] || ''; autosize(box); }
+    if (rbox != null && $('#rbox')) $('#rbox').value = rbox;
+    const ns = $('#stream');
+    if (ns) {
+      if (S.pinned || streamKey !== ns.dataset.key || streamTop == null) ns.scrollTop = ns.scrollHeight; else ns.scrollTop = streamTop;
+      watchStream(ns);
+    }
+    if (focusId && document.getElementById(focusId)) { const el = document.getElementById(focusId); el.focus({ preventScroll: true }); if (el.setSelectionRange && el.value) { const c = Math.min(caret ?? el.value.length, el.value.length); el.setSelectionRange(c, c); } }
   }
   function renderSignedOut() {
     app.innerHTML = `<div class="empty" style="height:100%"><div class="framed"><div class="brand" style="justify-content:center;margin-bottom:12px"><span style="width:56px;height:56px;display:block">${MARK}</span></div>
@@ -223,7 +232,7 @@
     if (!S.teams.length) return `<p class="lbl" style="padding:8px">No teams yet</p>`;
     return S.teams.map((t) => {
       const k = 'team:' + t.id; const open = !S.collapsed[k];
-      return `<button class="row sm team" data-act="toggle-sec" data-k="${esc(k)}" aria-expanded="${open}"><span class="av sm ink">${esc(initials(t.name))}</span><span class="txt"><span class="nm"><b>${esc(t.name)}</b></span></span>${ic('down')}</button>
+      return `<button class="row sm team" data-act="toggle-sec" data-k="${esc(k)}" aria-expanded="${open}"><span class="av sm ink sq">${esc(initials(t.name))}</span><span class="txt"><span class="nm"><b>${esc(t.name)}</b></span></span>${ic('down')}</button>
       ${open ? t.channels.map((c) => `<button class="row chan" data-act="open-chan" data-t="${esc(t.id)}" data-id="${esc(c.id)}" aria-current="${S.open?.kind === 'channel' && S.open.id === c.id && S.open.teamId === t.id}"><span class="hash">#</span>${esc(c.name)}</button>`).join('') : ''}`;
     }).join('');
   }
@@ -267,18 +276,35 @@
     const fav = isChat && favIds().includes(cur.id);
     const head = `<div class="chead">
       <button class="iconbtn back" data-act="close" aria-label="Back to list">${ic('left')}</button>
-      <div class="title">${isChat ? chatAvatar(cur, 'lg') : `<span class="av lg ink">${ic('hash')}</span>`}<div style="min-width:0"><h2>${esc(title)}</h2><div class="meta">${esc(meta)}</div></div></div>
+      <div class="title">${isChat ? chatAvatar(cur, 'lg') : `<span class="av lg ink sq">${ic('hash')}</span>`}<div style="min-width:0"><h2>${esc(title)}</h2><div class="meta">${esc(meta)}</div></div></div>
       <div class="tabs" role="tablist">${tabs.map(([k, l]) => `<button role="tab" data-act="tab" data-tab="${k}" aria-selected="${S.tab === k}">${l}</button>`).join('')}</div>
       <div class="acts">${isChat ? `<button class="iconbtn" data-act="fav" aria-label="${fav ? 'Remove from favorites' : 'Add to favorites'}" style="${fav ? 'color:var(--fg)' : ''}">${ic('star')}</button><button class="iconbtn" data-act="add-people" aria-label="Start a group chat with these people">${ic('people')}</button>` : ''}<button class="iconbtn" data-act="find-in" aria-label="Search this conversation">${ic('search')}</button></div>
     </div>`;
     let main;
     if (S.tab === 'shared') main = `<div class="panel">${sharedPanel()}</div>`;
     else if (S.tab === 'people') main = `<div class="panel">${peoplePanel(cur)}</div>`;
-    else main = `<div class="stream" id="stream"><div class="stream-inner">${S.loading && !S.items.length ? '<p class="sysmsg">Loading messages</p>' : isChat ? chatStream() : channelStream()}${S.typing ? `<p class="sysmsg">${esc(S.typing)} is typing</p>` : ''}</div></div>`;
+    else main = `<div class="stream" id="stream" data-key="${esc(draftKey())}"><div class="stream-inner">${streamInner()}</div></div><button class="jump" data-act="jump" ${S.pinned ? 'hidden' : ''}>${ic('down')} Latest</button>`;
     const showComposer = S.tab === 'chat';
     return `<div>${head}${banner}</div>${main}${showComposer ? composer(isChat ? 'Type a message' : 'Start a post') : '<div></div>'}`;
   }
 
+  function streamInner() {
+    const isChat = S.open?.kind === 'chat';
+    return `${S.loading && !S.items.length ? '<p class="sysmsg">Loading messages</p>' : isChat ? chatStream() : channelStream()}${S.typing ? `<p class="typing"><span class="dots"><i></i><i></i><i></i></span>${esc(S.typing)} is typing</p>` : ''}`;
+  }
+  // Partial updates, so polling never resets what you are typing or where you have scrolled.
+  function renderStream() {
+    const s = $('#stream'); if (!s || S.replyTo) return render();
+    const top = s.scrollTop;
+    s.firstElementChild.innerHTML = streamInner();
+    s.scrollTop = S.pinned ? s.scrollHeight : top;
+  }
+  function renderList() {
+    const l = $('.list'), r = $('.rail'); if (!l || !r) return render();
+    const top = $('.lscroll')?.scrollTop;
+    l.outerHTML = listPane(); r.outerHTML = rail();
+    if (top != null && $('.lscroll')) $('.lscroll').scrollTop = top;
+  }
   function reactionsHtml(m, ctx) {
     if (!m.reactions?.length) return '';
     return `<div class="reacts">${m.reactions.map((r) => { const e = LEGACY[r.type] || r.type; const mine = r.users.includes(S.me.id); return `<button class="${mine ? 'me' : ''}" data-act="react" data-id="${esc(m.id)}" data-e="${esc(r.type)}" data-on="${!mine}" ${ctx} title="${r.users.length} ${r.users.length === 1 ? 'reaction' : 'reactions'}">${esc(e)}<b>${r.users.length}</b></button>`; }).join('')}</div>`;
@@ -367,11 +393,21 @@
     return m;
   }
   function autosize(t) { t.style.height = 'auto'; t.style.height = Math.min(200, t.scrollHeight) + 'px'; }
-  function scrollDown(force) { const s = $('#stream'); if (!s) return; if (force || s.scrollHeight - s.scrollTop - s.clientHeight < 160) s.scrollTop = s.scrollHeight; }
+  const draftKey = () => (S.open ? `${S.open.kind}:${S.open.teamId || ''}:${S.open.id}:${S.tab}` : '');
+  const nearBottom = (s) => s.scrollHeight - s.scrollTop - s.clientHeight < 120;
+  function scrollDown(force) { const s = $('#stream'); if (!s) return; if (force || S.pinned) { S.pinned = true; s.scrollTop = s.scrollHeight; const j = $('.jump'); if (j) j.hidden = true; } }
+  // Images and late layout grow the stream after render; stay at the bottom while pinned there.
+  let ro = null;
+  function watchStream(el) {
+    ro?.disconnect();
+    if (!window.ResizeObserver) return;
+    ro = new ResizeObserver(() => { if (S.pinned) el.scrollTop = el.scrollHeight; });
+    ro.observe(el.firstElementChild); ro.observe(el);
+  }
   function nav(open) { if (S.open) S.history.push(S.open); S.fwd = []; return go(open); }
 
   async function go(open) {
-    S.open = open; S.items = []; S.tab = 'chat'; S.replyTo = null; S.editing = null; S.quote = null; S.typing = null; S.mentions = []; S.loading = true;
+    S.open = open; S.items = []; S.tab = 'chat'; S.replyTo = null; S.editing = null; S.quote = null; S.typing = null; S.mentions = []; S.loading = true; S.pinned = true;
     if (S.api.mode === 'demo') S.api.openId = open?.id;
     render();
     if (!open) return;
@@ -386,7 +422,7 @@
       const changed = JSON.stringify(items) !== JSON.stringify(S.items.filter((m) => !m.pending && !m.failed));
       S.items = [...items, ...pending]; S.loading = false;
       if (o.kind === 'chat') { const c = S.chats.find((x) => x.id === o.id); if (c?.unread) { c.unread = false; S.api.markRead(o.id).catch(() => {}); } }
-      if (first || changed) { render(); scrollDown(first); }
+      if (first || changed) { first ? render() : renderStream(); if (first) scrollDown(true); else if (!S.pinned) { const j = $('.jump'); if (j) { j.hidden = false; j.classList.add('new'); j.lastChild.textContent = ' New messages'; } } }
       if (first && o.kind === 'chat') { const c = S.chats.find((x) => x.id === o.id); if (c) refreshPresence(c.members.map((p) => p.id)); }
     } catch (e) { S.loading = false; render(); toast(e.message); }
   }
@@ -405,7 +441,7 @@
     const text = box.value.replace(/\s+$/, ''); if (!text.trim()) return;
     const { html: body, mentions } = toHtml(text, S.mentions);
     const html = S.quote ? `<blockquote><b>${esc(S.quote.name)}</b><br>${esc(S.quote.text)}</blockquote>${body}` : body;
-    box.value = ''; autosize(box); S.mentions = []; S.quote = null;
+    box.value = ''; autosize(box); S.mentions = []; S.quote = null; if (!S.editing) delete S.drafts[draftKey()]; S.pinned = true;
     const o = S.open;
     if (S.editing) {
       const id = S.editing; S.editing = null;
@@ -509,7 +545,7 @@
     else if (a === 'close') { S.history.push(S.open); go(null); }
     else if (a === 'back') { const p = S.history.pop(); if (S.open) S.fwd.push(S.open); go(p || null); }
     else if (a === 'fwd') { const n = S.fwd.pop(); if (S.open) S.history.push(S.open); if (n) go(n); }
-    else if (a === 'tab') { S.tab = b.dataset.tab; render(); if (S.tab === 'chat') scrollDown(true); }
+    else if (a === 'tab') { S.tab = b.dataset.tab; S.pinned = true; render(); }
     else if (a === 'refresh') { await refreshLists(); render(); toast('Up to date'); }
     else if (a === 'new-chat') newChatSheet();
     else if (a === 'add-people') { const c = current(); newChatSheet(c.members.filter((p) => p.id !== S.me.id)); }
@@ -523,12 +559,12 @@
     else if (a === 'react' || a === 'react-more') {
       const id = b.dataset.id; const post = b.hasAttribute('data-post');
       const run = async (type, on) => {
-        const target = findItem(id); if (target) { let r = target.reactions.find((x) => x.type === type); if (!r) target.reactions.push(r = { type, users: [] }); r.users = r.users.filter((u) => u !== S.me.id); if (on) r.users.push(S.me.id); target.reactions = target.reactions.filter((x) => x.users.length); render(); }
+        const target = findItem(id); if (target) { let r = target.reactions.find((x) => x.type === type); if (!r) target.reactions.push(r = { type, users: [] }); r.users = r.users.filter((u) => u !== S.me.id); if (on) r.users.push(S.me.id); target.reactions = target.reactions.filter((x) => x.users.length); renderStream(); }
         try { if (post) await S.api.reactPost(o.teamId, o.id, id, type, on); else await S.api.react(o.id, id, type, on); } catch (err) { toast(err.message); loadOpen(); }
       };
       if (a === 'react-more') emojiPicker(b, (em) => run(em, true)); else run(b.dataset.e, b.dataset.on === 'true');
     }
-    else if (a === 'edit') { S.editing = b.dataset.id; render(); const box = $('#box'); box.value = textOf(findItem(b.dataset.id).html); autosize(box); box.focus(); }
+    else if (a === 'edit') { S.editing = b.dataset.id; S.editDraft = textOf(findItem(b.dataset.id).html); render(); $('#box').focus(); }
     else if (a === 'cancel-edit') { S.editing = null; render(); }
     else if (a === 'cancel-quote') { S.quote = null; render(); }
     else if (a === 'quote') { const m = findItem(b.dataset.id); S.quote = { name: m.from?.name || '', text: textOf(m.html).slice(0, 200) }; render(); $('#box').focus(); }
@@ -536,6 +572,7 @@
     else if (a === 'retry') { const m = S.items.find((x) => x.id === b.dataset.id); m.failed = null; m.pending = true; render(); deliver(o, m); }
     else if (a === 'open-reply') { S.replyTo = b.dataset.id; render(); $('#rbox')?.focus(); }
     else if (a === 'send-reply') sendReply(b.dataset.id);
+    else if (a === 'jump') scrollDown(true);
   });
   const findItem = (id) => { for (const m of S.items) { if (m.id === id) return m; for (const r of m.replies || []) if (r.id === id) return r; } return null; };
   async function sendReply(pid) {
@@ -549,13 +586,18 @@
       e.preventDefault(); send();
     }
     if (e.target.id === 'box' && e.key === 'Escape') { if (S.editing) { S.editing = null; render(); } closeFloat(); }
-    if (e.target.id === 'box' && e.key === 'ArrowUp' && !e.target.value && S.open?.kind === 'chat') { const mine = [...S.items].reverse().find((m) => m.from?.id === S.me.id && !m.deleted && !m.pending); if (mine) { e.preventDefault(); S.editing = mine.id; render(); const box = $('#box'); box.value = textOf(mine.html); autosize(box); box.focus(); } }
+    if (e.target.id === 'box' && e.key === 'ArrowUp' && !e.target.value && S.open?.kind === 'chat') { const mine = [...S.items].reverse().find((m) => m.from?.id === S.me.id && !m.deleted && !m.pending); if (mine) { e.preventDefault(); S.editing = mine.id; S.editDraft = textOf(mine.html); render(); $('#box').focus(); } }
     if (e.target.id === 'rbox' && e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendReply(S.replyTo); }
   });
   app.addEventListener('input', (e) => {
-    if (e.target.id === 'box' || e.target.id === 'rbox') { autosize(e.target); if (e.target.id === 'box') mentionMenu(e.target); }
+    if (e.target.id === 'box' || e.target.id === 'rbox') { autosize(e.target); if (e.target.id === 'box') { if (S.editing) S.editDraft = e.target.value; else S.drafts[draftKey()] = e.target.value; mentionMenu(e.target); } }
     if (e.target.id === 'q') { S.q = e.target.value; if (S.view !== 'chat') S.view = 'chat'; render(); }
   });
+  app.addEventListener('scroll', (e) => {
+    if (e.target.id !== 'stream') return;
+    S.pinned = nearBottom(e.target);
+    const j = $('.jump'); if (j) j.hidden = S.pinned;
+  }, true);
   document.addEventListener('keydown', (e) => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'e') { e.preventDefault(); $('#q')?.focus(); } if (e.key === 'Escape') closeFloat(); });
 
   // ---------- presence: you show as active while Seams is open and you are using it ----------
@@ -583,8 +625,8 @@
     if (sess && sess.mode === 'live') { S.api = Live; S.mode = 'live'; S.me = sess.me; S.myStatus = sess.presence || 'Available'; }
     else { S.api = window.SeamsDemo; S.mode = 'demo'; S.serverDemo = !!sess; const d = await S.api.session(); S.me = d.me; S.myStatus = d.presence; }
     S.api.onEvent((ev) => {
-      if (ev.kind === 'typing' && S.open?.id === ev.chatId) { S.typing = ev.name; render(); scrollDown(); }
-      if (ev.kind === 'message') { if (S.open?.id === ev.chatId) S.typing = null; refreshLists().then(() => (S.open?.id === ev.chatId ? loadOpen() : render())); }
+      if (ev.kind === 'typing' && S.open?.id === ev.chatId) { S.typing = ev.name; renderStream(); }
+      if (ev.kind === 'message') { if (S.open?.id === ev.chatId) S.typing = null; refreshLists().then(() => { renderList(); if (S.open?.id === ev.chatId) loadOpen(); }); }
     });
     try { await refreshLists(); } catch (e) { S.error = e.message; }
     S.presence[S.me.id] = S.myStatus;
@@ -595,7 +637,7 @@
     if (S.mode === 'live') {
       beat(); setInterval(beat, 60e3);
       setInterval(() => { if (document.visibilityState === 'visible') loadOpen(); }, 5e3);
-      setInterval(() => { if (document.visibilityState === 'visible') refreshLists().then(render).catch(() => {}); }, 20e3);
+      setInterval(() => { if (document.visibilityState === 'visible') refreshLists().then(renderList).catch(() => {}); }, 20e3);
     }
   }
   render(); start();
