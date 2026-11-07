@@ -1,0 +1,17 @@
+{
+  "name": "seams",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A Teams client in the TwoDrive house style. One Entra app registration holds the application credentials; every person signs in once and their chats, channels and messages are theirs, as they are in Teams.",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js",
+    "demo": "SEAMS_DEMO=1 node server/index.js",
+    "test": "node --test test/*.test.js"
+  },
+  "license": "UNLICENSED"
+}
